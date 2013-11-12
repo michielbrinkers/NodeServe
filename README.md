@@ -1,5 +1,5 @@
 NodeServe
 =========
 
-sudo git clone https://github.com/michielbrinkers/NodeServe.git /etc/lib/nodeserve<br>
-sudo ln -s /etc/lib/nodeserve/nodeserve /etc/bin
+sudo git clone https://github.com/michielbrinkers/NodeServe.git /usr/lib/nodeserve<br>
+sudo ln -s /usr/lib/nodeserve/nodeserve /usr/bin
