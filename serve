@@ -1,0 +1,151 @@
+#!/usr/bin/node
+
+var http = require('http'),
+	fs = require('fs'),
+	path = require("path"),
+	url = require('url');
+
+var args = new function(){
+
+	this.path = undefined;
+	this.help = false;
+
+	for (var i = 2; i < process.argv.length; i++)
+	{
+		var arg = process.argv[i];
+		if ( arg == "-h" || arg == "--help" )
+		{
+			this.help = true;
+		}
+		else if ( arg.indexOf("-") == 0 )
+		{
+			arg = arg.indexOf("--") == 0 ? arg.substring(2,arg.length) : arg.substring(1,arg.length);
+			this[arg] = process.argv.length > i+1 && process.argv[i+1].indexOf("-") != 0 ? process.argv[++i] : true;
+		}
+		else if ( i == 2 )
+		{
+			// If first isn't an option we assume it's the path
+			this.path = arg;
+		}
+	}
+};
+
+if ( args.help )
+{
+	console.log([
+		"usage: serve [path] [options]","options:",
+		"  -p                 Port to use [8080]"
+	]);
+	process.exit();
+}
+
+var mimeTypes = {
+	'plain': 'text/plain',
+	'css': 'text/css',
+	'gif': 'image/gif',
+	'htm': 'text/html',
+	'html': 'text/html',
+	'ico': 'image/x-icon',
+	'jpeg': 'image/jpeg',
+	'jpg': 'image/jpeg',
+	'js': 'text/javascript',
+	'mov': 'video/quicktime',
+	'mp3': 'audio/mpeg3',
+	'mp4': 'video/mpeg',
+	'png': 'image/png',
+	'swf': 'application/x-shockwave-flash',
+	'zip': 'application/zip',
+
+	get: function(filename){
+		return this[path.extname(filename).substr(1)] || this.plain;
+	}
+};
+
+var statusCodes = {
+	200: "OK",
+	403: "Forbidden",
+	404: "Not Found",
+	500: "Internal Server Error"
+};
+
+function error(res, code, message){
+	res.writeHead(code,{'Content-Type': mimeTypes.plain});
+	res.write(code + " " + (message || statusCodes[code] || "") + "\n");
+	res.end(null);
+}
+
+function serveFile(res, filename, stats){
+	res.writeHead(200,{
+		'Content-Type': mimeTypes.get(filename),
+		'Content-Length': stats.size
+	});
+	fs.createReadStream(filename).pipe(res);
+}
+
+function serveDirectory(res, path, uri){
+	res.writeHead(200,{'Content-Type': mimeTypes.html});
+	res.write("<h1>Index of " + uri + "</h1>\n");
+
+	fs.readdir(path, function(err, files){
+		if ( err )
+		{
+			error(res, 500);
+		}
+		else
+		{
+			res.write("<ul>\n");
+
+			// Support going up a directory
+			if (uri != "/")
+			{
+				res.write("<li><a href=\"" + (uri.lastIndexOf("/") == 0 ? "/" : uri.substring(0, uri.lastIndexOf("/"))) + "\">..</a></li>\n");
+			}
+
+			// List all files
+			// TODO: check which files are directories and add / at the end
+			for (var i = 0; i < files.length; i++)
+			{
+				res.write("<li><a href=\"" + uri + (uri.charAt(uri.length-1) == "/" ? "" : "/") + files[i] + "\">" + files[i] + "</a></li>\n");
+			}
+
+			res.write("</ul>\n");
+			res.end(null);
+		}
+	});
+}
+
+http.createServer(function(req, res){
+
+	var uri = decodeURIComponent(url.parse(req.url).pathname);
+	if ( uri.indexOf("..") != -1 )
+	{
+		error(res, 403);
+	}
+	else
+	{
+		var filename = path.join(args.path || ".", uri);
+
+		// Check if file exists and get stats
+		fs.exists(filename, function(exists){
+			if ( exists ){
+				fs.lstat(filename, function(err, stats){
+					if ( stats && stats.isFile() )
+					{
+						serveFile(res, filename, stats);
+					}
+					else if ( stats && stats.isDirectory() )
+					{
+						serveDirectory(res, filename, uri);
+					}
+					else
+					{
+						//TODO: Support symlinks?
+						error(res, 500);
+					}
+				});
+			} else {
+				error(res, 404);
+			}
+		});
+	}
+}).listen(args.p || 8080);
