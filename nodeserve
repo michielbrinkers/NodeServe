@@ -39,6 +39,9 @@ if ( args.help )
 	process.exit();
 }
 
+args.path = args.path || "."
+args.p = args.p || 8080;
+
 var mimeTypes = {
 	'plain': 'text/plain',
 	'css': 'text/css',
@@ -123,7 +126,7 @@ http.createServer(function(req, res){
 	}
 	else
 	{
-		var filename = path.join(args.path || ".", uri);
+		var filename = path.join(args.path, uri);
 
 		// Check if file exists and get stats
 		fs.exists(filename, function(exists){
@@ -148,4 +151,6 @@ http.createServer(function(req, res){
 			}
 		});
 	}
-}).listen(args.p || 8080);
+}).listen(args.p);
+
+console.log("NodeServe running at " + path.resolve(args.path) + " on port " + args.p);
