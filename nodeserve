@@ -5,43 +5,6 @@ var http = require('http'),
 	path = require("path"),
 	url = require('url');
 
-var args = new function(){
-
-	this.path = undefined;
-	this.help = false;
-
-	for (var i = 2; i < process.argv.length; i++)
-	{
-		var arg = process.argv[i];
-		if ( arg == "-h" || arg == "--help" )
-		{
-			this.help = true;
-		}
-		else if ( arg.indexOf("-") == 0 )
-		{
-			arg = arg.indexOf("--") == 0 ? arg.substring(2,arg.length) : arg.substring(1,arg.length);
-			this[arg] = process.argv.length > i+1 && process.argv[i+1].indexOf("-") != 0 ? process.argv[++i] : true;
-		}
-		else if ( i == 2 )
-		{
-			// If first isn't an option we assume it's the path
-			this.path = arg;
-		}
-	}
-};
-
-if ( args.help )
-{
-	console.log([
-		"usage: serve [path] [options]","options:",
-		"  -p                 Port to use [8080]"
-	]);
-	process.exit();
-}
-
-args.path = args.path || ".";
-args.p = args.p || 8080;
-
 var mimeTypes = {
 	'plain': 'text/plain',
 	'css': 'text/css',
@@ -71,21 +34,33 @@ var statusCodes = {
 	500: "Internal Server Error"
 };
 
-function error(res, code, message){
+function error(res, code, message)
+{
 	res.writeHead(code,{'Content-Type': mimeTypes.plain});
 	res.write(code + " " + (message || statusCodes[code] || "") + "\n");
 	res.end(null);
 }
 
-function serveFile(res, filename, stats){
-	res.writeHead(200,{
-		'Content-Type': mimeTypes.get(filename),
-		'Content-Length': stats.size
+function serveFile(res, filename, stats)
+{
+	var readStream = fs.createReadStream(filename);
+
+	readStream.on('open', function(){
+		res.writeHead(200,{
+			'Content-Type': mimeTypes.get(filename),
+			'Content-Length': stats.size
+		});
+
+		readStream.pipe(res);
 	});
-	fs.createReadStream(filename).pipe(res);
+
+	readStream.on('error', function(err){
+		error(res, err.code == "EACCES" ? 403 : 500);
+	});
 }
 
-function serveDirectory(res, path, uri){
+function serveDirectory(res, path, uri)
+{
 	res.writeHead(200,{'Content-Type': mimeTypes.html});
 	res.write("<h1>Index of " + uri + "</h1>\n");
 
@@ -122,7 +97,7 @@ function serveDirectory(res, path, uri){
 function statFile(dir, filename, files, filestats, callback)
 {
 	var filepath = path.join(dir, filename);
-	fs.dir(filepath, function(err, stats){
+	fs.stat(filepath, function(err, stats){
 		filestats[filename] = err ? null : stats;
 
 		// Check all files have been done
@@ -138,7 +113,8 @@ function statFile(dir, filename, files, filestats, callback)
 	});
 }
 
-function statDir(dir, callback){
+function statDir(dir, callback)
+{
 	fs.readdir(dir, function(err, files){
 		if ( err )
 		{
@@ -155,8 +131,45 @@ function statDir(dir, callback){
 	});
 }
 
-http.createServer(function(req, res){
+// Setup default arguments
+var args = {
+	help: false,
+	path: ".",
+	p: 8080
+};
 
+// Parse arguments
+for (var i = 2; i < process.argv.length; i++)
+{
+	var arg = process.argv[i];
+	if ( arg == "-h" || arg == "--help" )
+	{
+		args.help = true;
+	}
+	else if ( arg.indexOf("-") == 0 )
+	{
+		arg = arg.indexOf("--") == 0 ? arg.substring(2,arg.length) : arg.substring(1,arg.length);
+		args[arg] = process.argv.length > i+1 && process.argv[i+1].indexOf("-") != 0 ? process.argv[++i] : true;
+	}
+	else if ( i == 2 )
+	{
+		// If first isn't an option we assume it's the path
+		args.path = arg;
+	}
+}
+
+// Show help if necessary
+if ( args.help )
+{
+	console.log([
+		"usage: serve [path] [options]","options:",
+		"  -p                 Port to use [8080]"
+	]);
+	process.exit();
+}
+
+// Start the server
+http.createServer(function(req, res){
 	var uri = decodeURIComponent(url.parse(req.url).pathname);
 	if ( uri.indexOf("..") != -1 )
 	{
