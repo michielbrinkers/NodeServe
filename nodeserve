@@ -39,7 +39,7 @@ if ( args.help )
 	process.exit();
 }
 
-args.path = args.path || "."
+args.path = args.path || ".";
 args.p = args.p || 8080;
 
 var mimeTypes = {
@@ -89,8 +89,8 @@ function serveDirectory(res, path, uri){
 	res.writeHead(200,{'Content-Type': mimeTypes.html});
 	res.write("<h1>Index of " + uri + "</h1>\n");
 
-	fs.readdir(path, function(err, files){
-		if ( err )
+	statDir(path, function(err, filestats){
+		if ( err || !filestats )
 		{
 			error(res, 500);
 		}
@@ -105,14 +105,52 @@ function serveDirectory(res, path, uri){
 			}
 
 			// List all files
-			// TODO: check which files are directories and add / at the end
-			for (var i = 0; i < files.length; i++)
+			for ( var file in filestats )
 			{
-				res.write("<li><a href=\"" + uri + (uri.charAt(uri.length-1) == "/" ? "" : "/") + files[i] + "\">" + files[i] + "</a></li>\n");
+				if ( filestats.hasOwnProperty(file) )
+				{
+					res.write("<li><a href=\"" + uri + (uri.charAt(uri.length-1) == "/" ? "" : "/") + file + "\">" + file + (filestats[file].isDirectory() ? "/" : "") + "</a></li>\n");
+				}
 			}
 
 			res.write("</ul>\n");
 			res.end(null);
+		}
+	});
+}
+
+function statFile(dir, filename, files, filestats, callback)
+{
+	var filepath = path.join(dir, filename);
+	fs.dir(filepath, function(err, stats){
+		filestats[filename] = err ? null : stats;
+
+		// Check all files have been done
+		for (var i = 0; i < files.length; i++)
+		{
+			if ( typeof filestats[files[i]] == "undefined" )
+			{
+				return;
+			}
+		}
+
+		callback(null, filestats);
+	});
+}
+
+function statDir(dir, callback){
+	fs.readdir(dir, function(err, files){
+		if ( err )
+		{
+			callback(err);
+		}
+		else
+		{
+			var stats = {};
+			for (var i = 0; i < files.length; i++)
+			{
+				statFile(dir, files[i], files, stats, callback);
+			}
 		}
 	});
 }
@@ -131,7 +169,7 @@ http.createServer(function(req, res){
 		// Check if file exists and get stats
 		fs.exists(filename, function(exists){
 			if ( exists ){
-				fs.lstat(filename, function(err, stats){
+				fs.stat(filename, function(err, stats){
 					if ( stats && stats.isFile() )
 					{
 						serveFile(res, filename, stats);
@@ -142,7 +180,6 @@ http.createServer(function(req, res){
 					}
 					else
 					{
-						//TODO: Support symlinks?
 						error(res, 500);
 					}
 				});
